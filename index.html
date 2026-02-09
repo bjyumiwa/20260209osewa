@@ -5,58 +5,107 @@
 <title>3日間のお世話ゲーム</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-  body {
-    margin: 0;
-    font-family: system-ui, -apple-system, "Yu Gothic", "Meiryo", sans-serif;
-    background: #f4f5f8;
-    color: #222;
-    text-align: center;
-  }
-  .container {
-    max-width: 420px;
-    margin: 0 auto;
-    padding: 24px;
-  }
-  #character {
-    width: 220px;
-    height: 220px;
-    margin: 80px auto 40px;
-    background-size: contain;
-    background-repeat: no-repeat;
-    background-position: center;
-    transition: transform 2s ease, opacity 2s ease;
-  }
-  .float {
-    animation: float 3s infinite ease-in-out;
-  }
-  @keyframes float {
-    0% { transform: translateY(0); }
-    50% { transform: translateY(-14px); }
-    100% { transform: translateY(0); }
-  }
-  .actions {
-    margin-top: 24px;
-  }
-  .actions button {
-    margin: 6px;
-    padding: 10px 14px;
-    font-size: 14px;
-  }
-  .hidden {
-    display: none;
-  }
-  #message {
-    font-size: 14px;
-    color: #666;
-    margin-top: 12px;
-  }
+body{
+  margin:0;
+  font-family:system-ui,-apple-system,"Yu Gothic","Meiryo",sans-serif;
+  background:#f4f5f8;
+  color:#222;
+  text-align:center;
+}
+.container{
+  max-width:420px;
+  margin:0 auto;
+  padding:24px;
+}
+
+/* ===== キャラクター領域 ===== */
+#character{
+  position:relative;
+  width:220px;
+  height:220px;
+  margin:80px auto 40px;
+}
+
+/* タネ */
+#seed{
+  position:absolute;
+  inset:0;
+  background-image:url(public/char/seed.png);
+  background-size:contain;
+  background-repeat:no-repeat;
+  background-position:center;
+  opacity:0.3;
+  transition:opacity 2s ease, transform 2s ease;
+}
+
+/* 煙 */
+#smoke{
+  position:absolute;
+  inset:0;
+  border-radius:50%;
+  background:radial-gradient(circle at center,
+    rgba(200,200,200,0.6),
+    rgba(200,200,200,0)
+  );
+  filter:blur(18px);
+  animation:smokePulse 4s infinite ease-in-out;
+}
+
+@keyframes smokePulse{
+  0%{opacity:0.4;}
+  50%{opacity:0.7;}
+  100%{opacity:0.4;}
+}
+
+/* 生後の浮遊 */
+.float{
+  animation:float 3s infinite ease-in-out;
+}
+@keyframes float{
+  0%{transform:translateY(0);}
+  50%{transform:translateY(-12px);}
+  100%{transform:translateY(0);}
+}
+
+#message{
+  font-size:14px;
+  color:#666;
+  margin-top:12px;
+}
+
+/* 操作 */
+.actions{
+  margin-top:24px;
+}
+.actions button{
+  margin:6px;
+  padding:10px 14px;
+  font-size:14px;
+}
+.hidden{display:none;}
+
+#ending{
+  font-size:28px;
+  margin-top:120px;
+}
+#logView{
+  text-align:left;
+  font-size:12px;
+  white-space:pre-wrap;
+  margin-top:24px;
+}
 </style>
 </head>
+
 <body>
 <div class="container">
 
-  <div id="character"></div>
-  <div id="message"></div>
+  <div id="character">
+    <div id="seed"></div>
+    <div id="smoke"></div>
+  </div>
+
+  <div id="message">……</div>
 
   <div class="actions hidden" id="actions">
     <button onclick="care('meal','light')">軽い食事</button>
@@ -71,136 +120,158 @@
     <button onclick="useMacaron()">マカロン</button>
   </div>
 
+  <div id="ending" class="hidden">ありがとう</div>
+  <div id="logView" class="hidden"></div>
+
 </div>
 
 <script>
-/*
-  ========= 設定 =========
-*/
-const EGG_TIME = 3 * 60 * 1000; // 3分
-const STORAGE_KEY = "care_game_core";
+/* ===== 定数 ===== */
+const EGG_TIME = 3 * 60 * 1000;      // 3分
+const LIFE_SPAN = 3 * 24 * 60 * 60 * 1000; // 3日
+const KEY = "care_game_seed";
 
-/*
-  ========= 初期化 =========
-*/
-let data = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {
-  startTime: Date.now(),
+/* ===== 状態 ===== */
+let data = JSON.parse(localStorage.getItem(KEY)) || {
+  id: Math.random().toString(36).slice(2),
+  start: Date.now(),
   born: false,
-  state: "egg",
+  dead: false,
   hearts: 5,
   mood: 0,
   poop: 0,
-  logs: []
+  sitter:{on:false,used:0,last:null},
+  revive:{drink:0,macaron:0},
+  logs:{}
 };
 
-const characterEl = document.getElementById("character");
-const messageEl = document.getElementById("message");
-const actionsEl = document.getElementById("actions");
+const seed = document.getElementById("seed");
+const smoke = document.getElementById("smoke");
+const actions = document.getElementById("actions");
 
-/*
-  ========= 表示 =========
-*/
-function showEgg() {
-  characterEl.style.backgroundImage = "url(public/char/egg.png)";
-  messageEl.textContent = "……";
-}
-
-function hatch() {
-  data.born = true;
-  data.state = "alive";
-  characterEl.classList.add("float");
-  characterEl.style.backgroundImage = "url(public/char/born.png)";
-  messageEl.textContent = "";
-  actionsEl.classList.remove("hidden");
-  log("birth", "hatched");
-  save();
-}
-
-function updateCharacter() {
-  if (!data.born) {
-    showEgg();
-  } else {
-    if (data.mood >= 1) {
-      characterEl.style.backgroundImage = "url(public/char/happy.png)";
-    } else if (data.mood <= -1) {
-      characterEl.style.backgroundImage = "url(public/char/sad.png)";
-    } else {
-      characterEl.style.backgroundImage = "url(public/char/normal.png)";
-    }
-  }
-}
-
-/*
-  ========= 時間管理 =========
-*/
-function tick() {
-  if (!data.born) {
-    if (Date.now() - data.startTime >= EGG_TIME) {
-      hatch();
-    }
-  } else {
-    data.poop += 0.01;
-    if (data.poop > 4) data.mood -= 0.01;
-  }
-  save();
-  updateCharacter();
-}
-
-setInterval(tick, 1000);
-
-/*
-  ========= お世話 =========
-*/
-function care(type, choice) {
-  if (!data.born) return;
-  data.hearts += Math.random() > 0.5 ? 1 : -1;
-  data.mood += Math.random() > 0.5 ? 1 : -1;
-  log(type, choice);
-  save();
-  updateCharacter();
-}
-
-function clean() {
-  if (!data.born) return;
-  data.poop = Math.max(0, data.poop - 3);
-  data.mood += 0.5;
-  log("clean", "done");
-  save();
-}
-
-function toggleSitter() {
-  log("sitter", "toggle");
-}
-
-function useDrink() {
-  if (!data.born) return;
-  data.mood += 1;
-  log("drink", "use");
-}
-
-function useMacaron() {
-  log("macaron", "use");
-}
-
-/*
-  ========= ログ =========
-*/
-function log(type, value) {
-  data.logs.push({
-    time: new Date().toLocaleString(),
-    type,
-    value
+/* ===== ログ ===== */
+function log(type,value){
+  const day = Math.floor((Date.now()-data.start)/(24*60*60*1000))+1;
+  if(!data.logs[day]) data.logs[day]=[];
+  data.logs[day].push({
+    time:new Date().toLocaleString(),
+    type,value,
+    hearts:data.hearts
   });
 }
 
-function save() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+/* ===== 誕生 ===== */
+function hatch(){
+  data.born = true;
+  seed.style.opacity = "1";
+  seed.style.backgroundImage = "url(public/char/normal.png)";
+  seed.classList.add("float");
+  smoke.style.display = "none";
+  actions.classList.remove("hidden");
+  log("birth","emerged");
+  save();
 }
 
-/*
-  ========= 初期表示 =========
-*/
-updateCharacter();
+/* ===== 時間進行 ===== */
+function tick(){
+  if(data.sitter.on) return;
+
+  const now = Date.now();
+
+  if(!data.born && now - data.start >= EGG_TIME){
+    hatch();
+  }
+
+  if(data.born && !data.dead){
+    data.poop += 0.01;
+    if(data.poop > 4) data.mood -= 0.01;
+  }
+
+  if(!data.dead && now - data.start >= LIFE_SPAN){
+    data.dead = true;
+    endGame();
+  }
+
+  save();
+}
+setInterval(tick,1000);
+
+/* ===== お世話 ===== */
+function care(type,choice){
+  if(!data.born || data.dead) return;
+  data.hearts += Math.random()>0.5?1:-1;
+  data.mood += Math.random()>0.5?1:-1;
+  log(type,choice);
+  updateMood();
+  save();
+}
+
+function clean(){
+  if(!data.born || data.dead) return;
+  data.poop = Math.max(0,data.poop-3);
+  data.mood += 0.5;
+  log("clean","done");
+  updateMood();
+  save();
+}
+
+function toggleSitter(){
+  if(!data.sitter.on){
+    data.sitter.on=true;
+    data.sitter.last=Date.now();
+  }else{
+    data.sitter.on=false;
+    data.sitter.used += Date.now()-data.sitter.last;
+  }
+  log("sitter",data.sitter.on?"on":"off");
+  save();
+}
+
+function useDrink(){
+  if(!data.born || data.dead) return;
+  data.mood += 1;
+  data.revive.drink++;
+  log("drink","use");
+  updateMood();
+}
+
+function useMacaron(){
+  if(!data.dead) return;
+  data.dead=false;
+  data.mood=-1;
+  data.revive.macaron++;
+  seed.style.backgroundImage="url(public/char/normal.png)";
+  seed.style.opacity="0.8";
+  log("macaron","revive");
+  save();
+}
+
+/* ===== 表情 ===== */
+function updateMood(){
+  if(data.mood>=1){
+    seed.style.backgroundImage="url(public/char/happy.png)";
+  }else if(data.mood<=-1){
+    seed.style.backgroundImage="url(public/char/sad.png)";
+  }else{
+    seed.style.backgroundImage="url(public/char/normal.png)";
+  }
+}
+
+/* ===== 終了 ===== */
+function endGame(){
+  actions.classList.add("hidden");
+  document.getElementById("ending").classList.remove("hidden");
+  setTimeout(()=>{
+    document.getElementById("logView").classList.remove("hidden");
+    document.getElementById("logView").textContent =
+      JSON.stringify(data.logs,null,2);
+  },3000);
+}
+
+/* ===== 保存 ===== */
+function save(){
+  localStorage.setItem(KEY,JSON.stringify(data));
+}
 </script>
 </body>
 </html>
