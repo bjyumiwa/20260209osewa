@@ -23,38 +23,37 @@ body{
   position:relative;
   width:220px;
   height:220px;
-  margin:80px auto 40px;
+  margin:60px auto 24px;
 }
 
-/* タネ */
-#seed{
+/* タネ（画像がなくても必ず見える） */
+#tane{
   position:absolute;
   inset:0;
-  background-image:url(public/char/seed.png);
-  background-size:contain;
-  background-repeat:no-repeat;
-  background-position:center;
-  opacity:0.3;
+  border-radius:50%;
+  background:
+    radial-gradient(circle at 35% 35%, #fff, #ccc 40%, #aaa 70%);
+  opacity:0.6;
   transition:opacity 2s ease, transform 2s ease;
 }
 
 /* 煙 */
-#smoke{
+.smoke{
   position:absolute;
-  inset:0;
+  inset:-20px;
   border-radius:50%;
-  background:radial-gradient(circle at center,
-    rgba(200,200,200,0.6),
-    rgba(200,200,200,0)
-  );
-  filter:blur(18px);
-  animation:smokePulse 4s infinite ease-in-out;
+  background:
+    radial-gradient(circle at center,
+      rgba(180,180,180,0.7),
+      rgba(180,180,180,0.0) 60%);
+  filter:blur(20px);
+  animation:smokeMove 6s infinite ease-in-out;
 }
 
-@keyframes smokePulse{
-  0%{opacity:0.4;}
-  50%{opacity:0.7;}
-  100%{opacity:0.4;}
+@keyframes smokeMove{
+  0%{transform:rotate(0deg) scale(1);opacity:0.4;}
+  50%{transform:rotate(180deg) scale(1.1);opacity:0.7;}
+  100%{transform:rotate(360deg) scale(1);opacity:0.4;}
 }
 
 /* 生後の浮遊 */
@@ -67,13 +66,27 @@ body{
   100%{transform:translateY(0);}
 }
 
+/* カウントダウン */
+#countdown{
+  width:120px;
+  height:4px;
+  background:#ddd;
+  margin:16px auto;
+  overflow:hidden;
+}
+#countbar{
+  height:100%;
+  width:100%;
+  background:#999;
+  transition:width 1s linear;
+}
+
 #message{
   font-size:14px;
   color:#666;
-  margin-top:12px;
+  margin-top:8px;
 }
 
-/* 操作 */
 .actions{
   margin-top:24px;
 }
@@ -101,10 +114,11 @@ body{
 <div class="container">
 
   <div id="character">
-    <div id="seed"></div>
-    <div id="smoke"></div>
+    <div id="tane"></div>
+    <div class="smoke" id="smoke"></div>
   </div>
 
+  <div id="countdown"><div id="countbar"></div></div>
   <div id="message">……</div>
 
   <div class="actions hidden" id="actions">
@@ -115,9 +129,6 @@ body{
     <button onclick="care('mini','A')">ミニゲームA</button>
     <button onclick="care('mini','B')">ミニゲームB</button>
     <button onclick="clean()">排泄を片付ける</button>
-    <button onclick="toggleSitter()">シッター</button>
-    <button onclick="useDrink()">ドリンク</button>
-    <button onclick="useMacaron()">マカロン</button>
   </div>
 
   <div id="ending" class="hidden">ありがとう</div>
@@ -126,138 +137,70 @@ body{
 </div>
 
 <script>
-/* ===== 定数 ===== */
-const EGG_TIME = 3 * 60 * 1000;      // 3分
-const LIFE_SPAN = 3 * 24 * 60 * 60 * 1000; // 3日
-const KEY = "care_game_seed";
+const WAIT_TIME = 60 * 1000;
+const LIFE_SPAN = 3 * 24 * 60 * 60 * 1000;
+const KEY = "care_game_tane";
 
-/* ===== 状態 ===== */
 let data = JSON.parse(localStorage.getItem(KEY)) || {
-  id: Math.random().toString(36).slice(2),
   start: Date.now(),
-  born: false,
-  dead: false,
-  hearts: 5,
-  mood: 0,
-  poop: 0,
-  sitter:{on:false,used:0,last:null},
-  revive:{drink:0,macaron:0},
+  born:false,
+  dead:false,
+  mood:0,
   logs:{}
 };
 
-const seed = document.getElementById("seed");
+const tane = document.getElementById("tane");
 const smoke = document.getElementById("smoke");
 const actions = document.getElementById("actions");
+const bar = document.getElementById("countbar");
 
-/* ===== ログ ===== */
 function log(type,value){
   const day = Math.floor((Date.now()-data.start)/(24*60*60*1000))+1;
   if(!data.logs[day]) data.logs[day]=[];
-  data.logs[day].push({
-    time:new Date().toLocaleString(),
-    type,value,
-    hearts:data.hearts
-  });
+  data.logs[day].push({time:new Date().toLocaleString(),type,value});
 }
 
-/* ===== 誕生 ===== */
 function hatch(){
-  data.born = true;
-  seed.style.opacity = "1";
-  seed.style.backgroundImage = "url(public/char/normal.png)";
-  seed.classList.add("float");
-  smoke.style.display = "none";
+  data.born=true;
+  smoke.style.display="none";
+  document.getElementById("countdown").style.display="none";
+  tane.classList.add("float");
+  tane.style.opacity="1";
   actions.classList.remove("hidden");
-  log("birth","emerged");
+  log("birth","tane_visible");
   save();
 }
 
-/* ===== 時間進行 ===== */
 function tick(){
-  if(data.sitter.on) return;
-
   const now = Date.now();
-
-  if(!data.born && now - data.start >= EGG_TIME){
-    hatch();
+  if(!data.born){
+    const passed = now - data.start;
+    const remain = Math.max(0, WAIT_TIME - passed);
+    bar.style.width = (remain / WAIT_TIME * 100) + "%";
+    if(passed >= WAIT_TIME) hatch();
   }
-
-  if(data.born && !data.dead){
-    data.poop += 0.01;
-    if(data.poop > 4) data.mood -= 0.01;
-  }
-
   if(!data.dead && now - data.start >= LIFE_SPAN){
-    data.dead = true;
+    data.dead=true;
     endGame();
   }
-
   save();
 }
 setInterval(tick,1000);
 
-/* ===== お世話 ===== */
 function care(type,choice){
   if(!data.born || data.dead) return;
-  data.hearts += Math.random()>0.5?1:-1;
   data.mood += Math.random()>0.5?1:-1;
   log(type,choice);
-  updateMood();
   save();
 }
 
 function clean(){
   if(!data.born || data.dead) return;
-  data.poop = Math.max(0,data.poop-3);
   data.mood += 0.5;
   log("clean","done");
-  updateMood();
   save();
 }
 
-function toggleSitter(){
-  if(!data.sitter.on){
-    data.sitter.on=true;
-    data.sitter.last=Date.now();
-  }else{
-    data.sitter.on=false;
-    data.sitter.used += Date.now()-data.sitter.last;
-  }
-  log("sitter",data.sitter.on?"on":"off");
-  save();
-}
-
-function useDrink(){
-  if(!data.born || data.dead) return;
-  data.mood += 1;
-  data.revive.drink++;
-  log("drink","use");
-  updateMood();
-}
-
-function useMacaron(){
-  if(!data.dead) return;
-  data.dead=false;
-  data.mood=-1;
-  data.revive.macaron++;
-  seed.style.backgroundImage="url(public/char/normal.png)";
-  seed.style.opacity="0.8";
-  log("macaron","revive");
-  save();
-}
-
-/* ===== 表情 ===== */
-function updateMood(){
-  if(data.mood>=1){
-    seed.style.backgroundImage="url(public/char/happy.png)";
-  }else if(data.mood<=-1){
-    seed.style.backgroundImage="url(public/char/sad.png)";
-  }else{
-    seed.style.backgroundImage="url(public/char/normal.png)";
-  }
-}
-
-/* ===== 終了 ===== */
 function endGame(){
   actions.classList.add("hidden");
   document.getElementById("ending").classList.remove("hidden");
@@ -268,7 +211,6 @@ function endGame(){
   },3000);
 }
 
-/* ===== 保存 ===== */
 function save(){
   localStorage.setItem(KEY,JSON.stringify(data));
 }
